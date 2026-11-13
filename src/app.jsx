@@ -50,6 +50,16 @@ function useStore(session) {
   return { ...state, canEdit: organizer, organizer, refresh };
 }
 
+/* ---------- logo (chef's hat) ---------- */
+function Logo({ size = 28, className = '' }) {
+  return <svg className={'logo ' + className} width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="14" fill="#1f5fa8" />
+    <g fill="#fff"><circle cx="22" cy="26" r="9" /><circle cx="32" cy="21" r="11" /><circle cx="42" cy="26" r="9" /><rect x="19" y="27" width="26" height="17" rx="2" /></g>
+    <rect x="19" y="44" width="26" height="7" rx="2" fill="#ef7d22" />
+    <path d="M26 36v6M32 34v8M38 36v6" stroke="#1f5fa8" strokeOpacity=".25" strokeWidth="2" strokeLinecap="round" />
+  </svg>;
+}
+
 /* ---------- small pieces ---------- */
 function Chip({ on, children, onClick, warn }) {
   return <button type="button" className={'chip' + (on ? ' on' : '') + (warn ? ' warn' : '')} onClick={onClick} aria-pressed={!!on}>{children}</button>;
@@ -445,7 +455,7 @@ function SignIn() {
     setBusy(false);
   };
   return <div className="auth"><form className="auth-card" onSubmit={submit}>
-    <div className="auth-logo"><span className="mark" aria-hidden="true">W</span><span>WOLT Kitchen</span></div>
+    <div className="auth-logo"><Logo size={56} /><span>WOLT Kitchen</span></div>
     <h2>{mode === 'in' ? 'Sign in' : 'Reset your password'}</h2>
     <label className="fact"><span>Email</span><input id="email" name="email" type="email" autoComplete="email" required /></label>
     {mode === 'in' && <label className="fact"><span>Password</span><input id="password" name="password" type="password" autoComplete="current-password" required /></label>}
@@ -470,7 +480,7 @@ function SetPassword({ done, invite }) {
     done();
   };
   return <div className="auth"><form className="auth-card" onSubmit={submit}>
-    <div className="auth-logo"><span className="mark" aria-hidden="true">W</span><span>WOLT Kitchen</span></div>
+    <div className="auth-logo"><Logo size={56} /><span>WOLT Kitchen</span></div>
     <h2>{invite ? 'Welcome! Set up your account' : 'Set a new password'}</h2>
     {invite && <label className="fact"><span>Your name</span><input id="name" name="name" autoComplete="name" required /></label>}
     <label className="fact"><span>Password (8+ characters)</span><input id="pw" name="pw" type="password" autoComplete="new-password" required /></label>
@@ -517,7 +527,7 @@ function Signed({ session }) {
       <div className="top-left">
         {detail
           ? <button type="button" className="shell-back" onClick={() => nav('/' + section)}><i className="ti ti-arrow-left" /><span>{TITLES[section]}</span></button>
-          : <button type="button" className="logo-btn" onClick={() => nav('/events')} aria-label="WOLT Kitchen home"><span className="mark" aria-hidden="true">W</span></button>}
+          : <button type="button" className="logo-btn" onClick={() => nav('/events')} aria-label="WOLT Kitchen home"><Logo size={30} /></button>}
       </div>
       <span className="top-title">{title}</span>
       <div className="top-right">
