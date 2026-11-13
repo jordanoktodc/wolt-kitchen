@@ -55,7 +55,7 @@ function Logo({ size = 28, className = '' }) {
   return <svg className={'logo ' + className} width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
     <rect width="64" height="64" rx="14" fill="#1f5fa8" />
     <g fill="#fff"><circle cx="22" cy="26" r="9" /><circle cx="32" cy="21" r="11" /><circle cx="42" cy="26" r="9" /><rect x="19" y="27" width="26" height="17" rx="2" /></g>
-    <rect x="19" y="44" width="26" height="7" rx="2" fill="#ef7d22" />
+    <rect x="19" y="44" width="26" height="7" rx="2" fill="#f2b233" />
     <path d="M26 36v6M32 34v8M38 36v6" stroke="#1f5fa8" strokeOpacity=".25" strokeWidth="2" strokeLinecap="round" />
   </svg>;
 }

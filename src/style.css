@@ -1,6 +1,6 @@
 /* Okto Field App look (system font, warm-neutral surfaces, 0.5px hairlines, 12px cards,
    white top bar with a 3px stripe, right-hand menu drawer) — blue as the working colour,
-   orange for highlights. Light only, like the Okto app. */
+   saffron for highlights. Light only, like the Okto app. */
 :root {
   color-scheme: light;
   --bg: #f4f6f9;          /* page */
@@ -15,11 +15,11 @@
   --accent-fg: #ffffff;
   --accent-soft: #e8f0fa;
   --accent-border: #b6cde9;
-  --hl: #ef7d22;          /* orange highlights: top stripe, active marker, attention */
-  --hl-soft: #fdf0e3;
-  --hl-border: #f6c79a;
-  --amber: #8a4b0b;
-  --amber-soft: #fdf0e3;
+  --hl: #f2b233;          /* saffron highlights: top stripe, active marker, attention */
+  --hl-soft: #fdf5e1;
+  --hl-border: #efd08a;
+  --amber: #7f5500;
+  --amber-soft: #fdf5e1;
   --danger: #a32d2d;
   --danger-soft: #fcebeb;
   --radius: 8px;
