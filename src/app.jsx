@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from 'react-router-dom';
 import { PrepDays, OvenSchedule, SafetyLog, daySheetHtml, safetyText } from './phase2.jsx';
 import { fmtIng, baseQty, family, fmt, itemKey, allergenHits, UNITS } from './units.js';
-import { supabase, AUTH_LINK_TYPE, loadRecipes, saveRecipe, loadReference, loadEventList, loadEvent, syncEvent, createEvent, deleteEvent, download, loadProfiles, setRole } from './lib/db.js';
+import { readInput, importRecipe, importEvent } from './lib/importDoc.js';
+import { markImported } from './lib/db.js';
+import { supabase, AUTH_LINK_TYPE, loadRecipes, saveRecipe, loadReference, loadEventList, loadEvent, syncEvent, createEvent, deleteEvent, download, loadProfiles, setRole, syncEvent as syncDraft } from './lib/db.js';
 
 const CATS = ['Protein', 'Starch', 'Vegetable', 'Salad', 'Soup', 'Sauce & dressing', 'Bread', 'Other'];
 const TAGS = [
@@ -87,8 +89,41 @@ function Empty({ title, children }) {
   return <div className="empty"><h3>{title}</h3><div>{children}</div></div>;
 }
 
+/* ---------- import dialog ---------- */
+function ImportDialog({ kind, onClose, onDone }) {
+  const [file, setFile] = useState(null);
+  const [pasted, setPasted] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const go = async () => {
+    setBusy(true); setErr('');
+    try { const input = await readInput({ file, pasted }); await onDone(input); }
+    catch (e) { setErr(e.message || 'Could not read that.'); setBusy(false); }
+  };
+  const what = kind === 'recipe' ? 'recipe' : 'menu or event plan';
+  return <div className="modal-overlay" onClick={busy ? undefined : onClose}>
+    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="imp-title" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-header"><b id="imp-title">Import a {what}</b><button type="button" className="x" aria-label="Close" onClick={onClose} disabled={busy}>×</button></div>
+      <div className="modal-body">
+        <p className="muted hint">Upload the Word doc, a PDF, or a photo of the {kind === 'recipe' ? 'recipe card' : 'plan'}, or paste the text. It’s read for you and opened as a new {kind} to check before anything is saved{kind === 'event' ? '' : ''}.</p>
+        <label className="fact"><span>File</span><input id="imp-file" type="file" accept=".docx,.pdf,.txt,image/*" disabled={busy} onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
+        <div className="or"><span>or</span></div>
+        <label className="fact"><span>Paste text</span><textarea id="imp-text" rows="6" disabled={busy} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder={kind === 'recipe' ? 'Balsamic Fig Chicken\n3 Tbsp butter…' : 'Smith Wedding – Oct 3\nRegular table: …'} /></label>
+        {err && <p className="notice">{err}</p>}
+      </div>
+      <div className="modal-footer">
+        <button type="button" className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
+        <button type="button" className="btn primary" onClick={go} disabled={busy || (!file && !pasted.trim())}>{busy ? 'Reading… this takes about 20 seconds' : 'Read it'}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+const slugify = (s) => (s || 'recipe').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'recipe';
+const BLANK_RECIPE = { id: null, name: '', category: 'Other', batchLabel: '', servingsPerBatch: null, tags: {}, ingredients: [{ qty: null, unit: null, item: '' }], notes: '', text: '', source: null, reviewed: false };
+
 /* ---------- recipes ---------- */
-function RecipeList({ recipes, open }) {
+function RecipeList({ recipes, open, organizer, onNew, onImport }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('All');
   const list = recipes
@@ -99,6 +134,10 @@ function RecipeList({ recipes, open }) {
   return <section>
     <div className="toolbar">
       <input id="recipe-search" type="search" placeholder="Search recipes or ingredients" value={q} onChange={(e) => setQ(e.target.value)} />
+      {organizer && <div className="head-actions push-right">
+        <button type="button" className="btn" onClick={onImport}><i className="ti ti-file-import" />Import</button>
+        <button type="button" className="btn primary" onClick={onNew}><i className="ti ti-plus" />New recipe</button>
+      </div>}
     </div>
     <div className="chips scroll">
       <Chip on={cat === 'All'} onClick={() => setCat('All')}>All {recipes.length}</Chip>
@@ -114,9 +153,9 @@ function RecipeList({ recipes, open }) {
   </section>;
 }
 
-function RecipeDetail({ recipe, store, back, setMsg }) {
+function RecipeDetail({ recipe, store, back, setMsg, isNew = false, onCreated }) {
   const [mult, setMult] = useState(1);
-  const [edit, setEdit] = useState(false);
+  const [edit, setEdit] = useState(isNew);
   const [draft, setDraft] = useState(recipe);
   const [showDoc, setShowDoc] = useState(false);
   useEffect(() => { if (!edit) setDraft(recipe); }, [recipe, edit]);
@@ -124,19 +163,24 @@ function RecipeDetail({ recipe, store, back, setMsg }) {
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const setIng = (i, patch) => set({ ingredients: draft.ingredients.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
   const commit = async () => {
-    try { await saveRecipe({ ...draft, reviewed: true }); setMsg('Saved'); setEdit(false); store.refresh(['recipes']); }
+    if (!draft.name.trim()) { setMsg('Give the recipe a name first.'); return; }
+    let id = draft.id;
+    if (isNew) { const base = slugify(draft.name); id = base; let n = 2; while (store.recipes.some((x) => x.id === id)) id = `${base}-${n++}`; }
+    const ingredients = (draft.ingredients || []).filter((i) => (i.item || '').trim());
+    try { await saveRecipe({ ...draft, id, ingredients, reviewed: true }); setMsg('Saved'); setEdit(false); await store.refresh(['recipes']); if (isNew && onCreated) onCreated(id); }
     catch (e) { setMsg('Could not save the recipe. ' + (e.message || '')); }
   };
   const warn = warningsFor(r.tags, r.ingredients);
   return <section className="detail">
     <button type="button" className="back" onClick={back}>‹ All recipes</button>
     <header className="detail-head">
-      {edit ? <input id="r-name" className="title-input" value={draft.name} onChange={(e) => set({ name: e.target.value })} /> : <h2>{r.name}</h2>}
+      {edit ? <label className="fact grow"><span>Recipe name</span><input id="r-name" value={draft.name} placeholder="e.g. Creamy Tuscan Chicken" autoFocus={isNew} onChange={(e) => set({ name: e.target.value })} /></label> : <h2>{r.name}</h2>}
       <div className="head-actions">
         {store.canEdit && !edit && <button type="button" className="btn" onClick={() => setEdit(true)}>Edit recipe</button>}
-        {edit && <><button type="button" className="btn ghost" onClick={() => setEdit(false)}>Cancel</button><button type="button" className="btn primary" onClick={commit}>Save recipe</button></>}
+        {edit && <><button type="button" className="btn ghost" onClick={() => (isNew ? back() : setEdit(false))}>Cancel</button><button type="button" className="btn primary" onClick={commit}>Save recipe</button></>}
       </div>
     </header>
+    {isNew && r.source && <p className="notice">Read from <b>{r.source}</b>. Check the name, batch size, allergen tags and every ingredient against the original below, then save.</p>}
     {!r.reviewed && !edit && <p className="notice">Imported automatically from <b>{r.source}</b>. Check the ingredient list against the original below, then save it to mark it checked.</p>}
 
     <div className="facts">
@@ -180,13 +224,13 @@ function RecipeDetail({ recipe, store, back, setMsg }) {
 
     <div className="doc">
       <button type="button" className="btn ghost" onClick={() => setShowDoc(!showDoc)} aria-expanded={showDoc}>{showDoc ? 'Hide' : 'Show'} the original recipe, method and oven settings</button>
-      {showDoc && <pre className="doctext">{r.text}</pre>}
+      {showDoc && (r.text ? <pre className="doctext">{r.text}</pre> : <p className="muted hint">No original text for this recipe.</p>)}
     </div>
   </section>;
 }
 
 /* ---------- events ---------- */
-function EventList({ events, open, create, canEdit }) {
+function EventList({ events, open, create, canEdit, onImport }) {
   const t = today();
   const sorted = [...events].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const upcoming = sorted.filter((e) => e.date && e.date >= t);
@@ -198,7 +242,7 @@ function EventList({ events, open, create, canEdit }) {
     {e.imported && <span className="row-meta"><span className="pill muted-pill">From plan doc</span></span>}
   </button></li>;
   return <section>
-    <div className="toolbar between"><h2 className="section-title">Events</h2>{canEdit && <button type="button" className="btn primary" onClick={create}>+ New event</button>}</div>
+    <div className="toolbar between"><h2 className="section-title">Events</h2>{canEdit && <div className="head-actions"><button type="button" className="btn" onClick={onImport}><i className="ti ti-file-import" />Import</button><button type="button" className="btn primary" onClick={create}><i className="ti ti-plus" />New event</button></div>}</div>
     {!events.length && <Empty title="No events planned yet">{canEdit ? 'Start with New event: name it, set the guest count, then add dishes from the recipe library.' : 'Events the organizers plan will show up here.'}</Empty>}
     {!!upcoming.length && <><h3 className="group">Coming up</h3><ul className="rows">{upcoming.map((e) => <Card key={e.id} e={e} />)}</ul></>}
     {!!past.length && <><h3 className="group">Past</h3><ul className="rows">{past.map((e) => <Card key={e.id} e={e} />)}</ul></>}
@@ -353,8 +397,9 @@ function EventDetail({ ev, store, back, setMsg }) {
   return <section className="detail">
     <button type="button" className="back" onClick={back}>‹ All events</button>
     <header className="event-head">
-      {ro ? <h2>{draft.name}</h2> : <input id="ev-name" className="title-input" defaultValue={draft.name} onBlur={(e) => update({ name: e.target.value })} />}
+      {ro && <h2>{draft.name}</h2>}
       <div className="facts">
+        {!ro && <label className="fact full"><span>Event name</span><input id="ev-name" defaultValue={draft.name} placeholder="e.g. Smith Wedding" onBlur={(e) => update({ name: e.target.value })} /></label>}
         <label className="fact"><span>Date</span>{ro ? <b>{fmtDate(draft.date)}</b> : <input id="ev-date" type="date" value={draft.date || ''} onChange={(e) => update({ date: e.target.value })} />}</label>
         <label className="fact"><span>Guests</span>{ro ? <b>{draft.guests}</b> : <input id="ev-guests" type="number" min="0" inputMode="numeric" defaultValue={draft.guests} onBlur={(e) => update({ guests: Number(e.target.value) || 0 })} />}</label>
         <label className="fact wide"><span>Notes</span>{ro ? <b>{draft.notes || '—'}</b> : <input id="ev-notes" defaultValue={draft.notes || ''} placeholder="Kitchen crew, delivery day, venue" onBlur={(e) => update({ notes: e.target.value })} />}</label>
@@ -494,6 +539,12 @@ function SetPassword({ done, invite }) {
 function RecipeRoute({ store, setMsg }) {
   const { id } = useParams();
   const nav = useNavigate();
+  const loc = useLocation();
+  if (id === 'new') {
+    if (!store.organizer) return <Navigate to="/recipes" replace />;
+    const draft = loc.state?.draft || BLANK_RECIPE;
+    return <RecipeDetail key={loc.key} recipe={draft} isNew store={store} back={() => nav('/recipes')} setMsg={setMsg} onCreated={(newId) => nav('/recipes/' + newId, { replace: true })} />;
+  }
   const recipe = store.recipes.find((r) => r.id === id);
   if (!recipe) return store.status === 'ready' ? <Empty title="Recipe not found">It may have been renamed or removed.</Empty> : null;
   return <RecipeDetail recipe={recipe} store={store} back={() => nav('/recipes')} setMsg={setMsg} />;
@@ -507,6 +558,19 @@ function Signed({ session }) {
   const create = async () => {
     try { const id = await createEvent(today()); store.refresh(['events']); nav('/events/' + id); }
     catch (e) { setMsg('Could not create the event: ' + e.message); }
+  };
+  const [importing, setImporting] = useState(null);
+  const doImport = async (input) => {
+    if (importing === 'recipe') {
+      const draft = await importRecipe(input);
+      setImporting(null); nav('/recipes/new', { state: { draft } });
+    } else {
+      const draft = await importEvent(input, store.recipes.map((r) => r.id));
+      await createEvent(draft.date || today(), draft.id, draft.name);
+      await syncDraft({ id: draft.id, name: draft.name, date: draft.date || today(), guests: 0, notes: '', extras: [], checked: {}, stores: {}, dishes: [], prepDays: [], ovenDays: [], tempLog: [], checks: {} }, draft);
+      await markImported(draft);
+      setImporting(null); store.refresh(['events']); setMsg('Imported — check it over'); nav('/events/' + draft.id);
+    }
   };
   const loc = useLocation();
   const [menu, setMenu] = useState(false);
@@ -558,15 +622,16 @@ function Signed({ session }) {
       {store.status === 'error' && <Empty title="Couldn't load the kitchen data">Reload the page. If it keeps happening, check your connection.</Empty>}
       {store.status === 'loading' ? <Empty title="Loading the kitchen…" /> : <Routes>
         <Route path="/" element={<Navigate to="/events" replace />} />
-        <Route path="/events" element={<EventList events={store.events} open={(id) => nav('/events/' + id)} create={create} canEdit={store.organizer} />} />
+        <Route path="/events" element={<EventList events={store.events} open={(id) => nav('/events/' + id)} create={create} canEdit={store.organizer} onImport={() => setImporting('event')} />} />
         <Route path="/events/:id" element={<EventLoader store={store} setMsg={setMsg} />} />
-        <Route path="/recipes" element={<RecipeList recipes={store.recipes} open={(id) => nav('/recipes/' + id)} />} />
+        <Route path="/recipes" element={<RecipeList recipes={store.recipes} open={(id) => nav('/recipes/' + id)} organizer={store.organizer} onNew={() => nav('/recipes/new', { state: { draft: BLANK_RECIPE } })} onImport={() => setImporting('recipe')} />} />
         <Route path="/recipes/:id" element={<RecipeRoute store={store} setMsg={setMsg} />} />
         <Route path="/quantities" element={<Reference reference={store.reference} />} />
         <Route path="/people" element={<People store={store} setMsg={setMsg} />} />
         <Route path="*" element={<Navigate to="/events" replace />} />
       </Routes>}
     </main>
+    {importing && <ImportDialog kind={importing} onClose={() => setImporting(null)} onDone={doImport} />}
     <div className={'toast' + (msg ? ' show' : '')} role="status" aria-live="polite">{msg}</div>
   </div>;
 }

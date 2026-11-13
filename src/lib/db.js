@@ -123,10 +123,13 @@ export async function syncEvent(prev, next) {
   }
 }
 
-export async function createEvent(today) {
-  const id = newId();
-  const { error } = await supabase.from('events').insert({ id, name: 'New event', event_date: today, guests: 0 }); fail(error);
+export async function createEvent(today, id = newId(), name = 'New event') {
+  const { error } = await supabase.from('events').insert({ id, name, event_date: today, guests: 0 }); fail(error);
   return id;
+}
+// Imported events keep where they came from and the original text (not part of the normal diff sync).
+export async function markImported(ev) {
+  const { error } = await supabase.from('events').update({ imported: true, source_file: ev.source || null, plan_text: ev.planText || null }).eq('id', ev.id); fail(error);
 }
 export async function deleteEvent(id) {
   const { error } = await supabase.from('events').delete().eq('id', id); fail(error);
