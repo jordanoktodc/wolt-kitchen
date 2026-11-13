@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Routes, Route, NavLink, useNavigate, useParams, Navigate } from 'react-router-dom';
+import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from 'react-router-dom';
 import { PrepDays, OvenSchedule, SafetyLog, daySheetHtml, safetyText } from './phase2.jsx';
 import { fmtIng, baseQty, family, fmt, itemKey, allergenHits, UNITS } from './units.js';
 import { supabase, AUTH_LINK_TYPE, loadRecipes, saveRecipe, loadReference, loadEventList, loadEvent, syncEvent, createEvent, deleteEvent, download, loadProfiles, setRole } from './lib/db.js';
@@ -445,7 +445,7 @@ function SignIn() {
     setBusy(false);
   };
   return <div className="auth"><form className="auth-card" onSubmit={submit}>
-    <div className="brand"><span className="mark" aria-hidden="true">W</span><span><b>WOLT Kitchen</b><small>Recipes · events · groceries</small></span></div>
+    <div className="auth-logo"><span className="mark" aria-hidden="true">W</span><span>WOLT Kitchen</span></div>
     <h2>{mode === 'in' ? 'Sign in' : 'Reset your password'}</h2>
     <label className="fact"><span>Email</span><input id="email" name="email" type="email" autoComplete="email" required /></label>
     {mode === 'in' && <label className="fact"><span>Password</span><input id="password" name="password" type="password" autoComplete="current-password" required /></label>}
@@ -470,7 +470,7 @@ function SetPassword({ done, invite }) {
     done();
   };
   return <div className="auth"><form className="auth-card" onSubmit={submit}>
-    <div className="brand"><span className="mark" aria-hidden="true">W</span><span><b>WOLT Kitchen</b><small>Recipes · events · groceries</small></span></div>
+    <div className="auth-logo"><span className="mark" aria-hidden="true">W</span><span>WOLT Kitchen</span></div>
     <h2>{invite ? 'Welcome! Set up your account' : 'Set a new password'}</h2>
     {invite && <label className="fact"><span>Your name</span><input id="name" name="name" autoComplete="name" required /></label>}
     <label className="fact"><span>Password (8+ characters)</span><input id="pw" name="pw" type="password" autoComplete="new-password" required /></label>
@@ -498,13 +498,52 @@ function Signed({ session }) {
     try { const id = await createEvent(today()); store.refresh(['events']); nav('/events/' + id); }
     catch (e) { setMsg('Could not create the event: ' + e.message); }
   };
-  const links = [['/events', 'Events'], ['/recipes', 'Recipes'], ['/quantities', 'Quantities'], ...(store.organizer ? [['/people', 'People']] : [])];
+  const loc = useLocation();
+  const [menu, setMenu] = useState(false);
+  useEffect(() => { setMenu(false); window.scrollTo(0, 0); }, [loc.pathname]);
+  const parts = loc.pathname.split('/').filter(Boolean);
+  const section = parts[0] || 'events';
+  const detail = parts.length > 1;
+  const TITLES = { events: 'Events', recipes: 'Recipes', quantities: 'Quantities', people: 'People' };
+  const title = detail ? (section === 'events' ? 'Event' : 'Recipe') : (TITLES[section] || 'WOLT Kitchen');
+  const items = [
+    ['/events', 'Events', 'ti-calendar-event'],
+    ['/recipes', 'Recipes', 'ti-chef-hat'],
+    ['/quantities', 'Quantities', 'ti-scale'],
+  ];
+  const first = (store.profile?.full_name || store.profile?.email || '').split(/[ @]/)[0];
   return <div className="app">
     <header className="top">
-      <div className="brand"><span className="mark" aria-hidden="true">W</span><span><b>WOLT Kitchen</b><small>{store.profile ? `${store.profile.full_name || store.profile.email} · ${store.profile.role}` : 'Recipes · events · groceries'}</small></span></div>
-      <nav>{links.map(([to, l]) => <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}>{l}</NavLink>)}</nav>
-      <button type="button" className="btn ghost small" onClick={() => supabase.auth.signOut()}>Sign out</button>
+      <div className="top-left">
+        {detail
+          ? <button type="button" className="shell-back" onClick={() => nav('/' + section)}><i className="ti ti-arrow-left" /><span>{TITLES[section]}</span></button>
+          : <button type="button" className="logo-btn" onClick={() => nav('/events')} aria-label="WOLT Kitchen home"><span className="mark" aria-hidden="true">W</span></button>}
+      </div>
+      <span className="top-title">{title}</span>
+      <div className="top-right">
+        <span className="top-name">{first}</span>
+        <button type="button" className="icon-btn" onClick={() => setMenu(true)} aria-label="Menu"><i className="ti ti-menu-2" /></button>
+      </div>
     </header>
+    {menu && <div className="menu-overlay" onClick={() => setMenu(false)}>
+      <nav className="menu-drawer" onClick={(e) => e.stopPropagation()} aria-label="Main menu">
+        <div className="menu-drawer-header">
+          <div><b>{store.profile?.full_name || 'WOLT Kitchen'}</b><small>{store.profile?.email} · {store.profile?.role}</small></div>
+          <button type="button" className="icon-btn" onClick={() => setMenu(false)} aria-label="Close menu"><i className="ti ti-x" /></button>
+        </div>
+        <div className="menu-section">
+          <div className="menu-section-label">Kitchen</div>
+          {items.map(([to, l, ic]) => <button key={to} type="button" className={'menu-item' + (section === to.slice(1) ? ' on' : '')} onClick={() => nav(to)}><i className={'ti ' + ic} />{l}</button>)}
+        </div>
+        {store.organizer && <div className="menu-section">
+          <div className="menu-section-label">Admin</div>
+          <button type="button" className={'menu-item' + (section === 'people' ? ' on' : '')} onClick={() => nav('/people')}><i className="ti ti-users" />People</button>
+        </div>}
+        <div className="menu-section">
+          <button type="button" className="menu-item menu-item-danger" onClick={() => supabase.auth.signOut()}><i className="ti ti-logout" />Sign out</button>
+        </div>
+      </nav>
+    </div>}
     <main>
       {store.status === 'error' && <Empty title="Couldn't load the kitchen data">Reload the page. If it keeps happening, check your connection.</Empty>}
       {store.status === 'loading' ? <Empty title="Loading the kitchen…" /> : <Routes>
