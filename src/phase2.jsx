@@ -226,7 +226,7 @@ export const CHECKS = [
   'Warmers on and at 140°F or above before food goes out',
 ];
 
-export function SafetyLog({ draft, update, ro, organizer, onDownload }) {
+export function SafetyLog({ draft, update, ro, organizer, me, onDownload }) {
   const log = draft.tempLog || [];
   const checks = draft.checks || {};
   const [stage, setStage] = useState('hot-hold');
@@ -258,7 +258,7 @@ export function SafetyLog({ draft, update, ro, organizer, onDownload }) {
         <td className="qty">{t12(toMin(e.time))}</td><td>{e.item}</td><td><span className="muted">{s.label}</span><br /><span className="target">{target(s)}</span></td>
         <td className="qty"><b>{e.tempF}°F</b> {ok === false ? <span className="pill red">Out</span> : <span className="pill green">OK</span>}</td>
         <td>{e.initials}</td>
-        <td>{ro ? e.action : <input id={'ta' + e.id} aria-label="Action taken" defaultValue={e.action} placeholder={ok === false ? 'Required: what was done' : ''} onBlur={(x) => x.target.value !== e.action && update({ tempLog: log.map((y) => (y.id === e.id ? { ...y, action: x.target.value } : y)) })} />}
+        <td>{ro || !(organizer || !e.createdBy || e.createdBy === me) ? (e.action || '') : <input id={'ta' + e.id} aria-label="Action taken" defaultValue={e.action} placeholder={ok === false ? 'Required: what was done' : ''} onBlur={(x) => x.target.value !== e.action && update({ tempLog: log.map((y) => (y.id === e.id ? { ...y, action: x.target.value } : y)) })} />}
           {ok === false && !e.action && <span className="warn-inline">Record what was done</span>}</td>
         <td>{organizer && <button type="button" className="x" aria-label="Remove entry" onClick={() => update({ tempLog: log.filter((y) => y.id !== e.id) })}>×</button>}</td>
       </tr>; })}

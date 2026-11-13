@@ -28,6 +28,9 @@ export async function loadRecipes() {
   const { data, error } = await supabase.from('recipes').select('*').order('name');
   fail(error); return data.map(recipeFromRow);
 }
+export async function deleteRecipe(id) {
+  const { error } = await supabase.from('recipes').delete().eq('id', id); fail(error);
+}
 export async function saveRecipe(r) {
   const { error } = await supabase.from('recipes').upsert(recipeToRow(r)); fail(error);
 }

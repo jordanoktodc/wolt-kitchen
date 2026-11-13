@@ -35,11 +35,37 @@ Roles (`profiles.role`):
 People join by invitation only (Supabase → Authentication → Users → Invite user). The invite link
 lands on a "set up your account" screen where they choose a name and password.
 
+## Edge function: import-doc
+
+Reads a recipe or event plan (Word text extracted in the browser, PDF, photo, or pasted text) with
+Claude and returns structured data; the app opens it for review and nothing is saved until an
+organizer saves. Organizers only.
+
+```
+npx supabase secrets set ANTHROPIC_API_KEY=... --remote=nzkkilmmmqcofjndfzog   # WOLT's own key ("WOLT Kitchen")
+npx supabase functions deploy import-doc --remote=nzkkilmmmqcofjndfzog
+```
+
+## Adding people
+
+Supabase's built-in email sender allows only a few emails an hour. If an invite fails with
+"email rate limit exceeded", use Authentication → Users → Add user → Create new user (tick Auto
+Confirm) with a temporary password, then the person changes it from ☰ → Change password.
+The lasting fix is custom SMTP (Authentication → Emails → SMTP Settings, e.g. Resend).
+Set roles on the app's People page (organizers only).
+
 ## Supabase Auth settings
 
 - Sign In / Providers: **Allow new users to sign up** = off.
 - URL Configuration: **Site URL** = the live Vercel address; add it (and `http://localhost:5173`) to
   **Redirect URLs** so invite and password-reset links come back to the app.
+
+## Checks
+
+```
+npm run lint    # ESLint: undefined names, hook rules, unused code
+npm run build
+```
 
 ## Local development
 

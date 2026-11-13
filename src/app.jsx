@@ -3,8 +3,7 @@ import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from 're
 import { PrepDays, OvenSchedule, SafetyLog, daySheetHtml, safetyText } from './phase2.jsx';
 import { fmtIng, baseQty, family, fmt, itemKey, allergenHits, UNITS } from './units.js';
 import { readInput, importRecipe, importEvent } from './lib/importDoc.js';
-import { markImported } from './lib/db.js';
-import { supabase, AUTH_LINK_TYPE, loadRecipes, saveRecipe, loadReference, loadEventList, loadEvent, syncEvent, createEvent, deleteEvent, download, loadProfiles, setRole, syncEvent as syncDraft } from './lib/db.js';
+import { supabase, AUTH_LINK_TYPE, loadRecipes, saveRecipe, deleteRecipe, loadReference, loadEventList, loadEvent, syncEvent, createEvent, deleteEvent, markImported, download, loadProfiles, setRole } from './lib/db.js';
 
 const CATS = ['Protein', 'Starch', 'Vegetable', 'Salad', 'Soup', 'Sauce & dressing', 'Bread', 'Other'];
 const TAGS = [
@@ -89,6 +88,46 @@ function Empty({ title, children }) {
   return <div className="empty"><h3>{title}</h3><div>{children}</div></div>;
 }
 
+/* ---------- error boundary (a screen that crashes shows a message, not a blank app) ---------- */
+class ErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error(err, info); }
+  componentDidUpdate(prev) { if (prev.resetKey !== this.props.resetKey && this.state.err) this.setState({ err: null }); }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return <Empty title="Something went wrong on this screen">Go back and try again. If it keeps happening, tell Jordan what you were doing. <div style={{ marginTop: 12 }}><button type="button" className="btn small" onClick={() => window.location.reload()}>Reload</button></div></Empty>;
+  }
+}
+
+/* ---------- change password ---------- */
+function ChangePassword({ onClose, setMsg }) {
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    const f = e.target.elements;
+    if (f.pw.value.length < 8) return setErr('Use at least 8 characters.');
+    if (f.pw.value !== f.pw2.value) return setErr('The two passwords don’t match.');
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: f.pw.value });
+    setBusy(false);
+    if (error) return setErr(error.message);
+    setMsg('Password changed'); onClose();
+  };
+  return <div className="modal-overlay" onClick={onClose}>
+    <form className="modal" role="dialog" aria-modal="true" aria-labelledby="cp-title" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+      <div className="modal-header"><b id="cp-title">Change password</b><button type="button" className="x" aria-label="Close" onClick={onClose}>×</button></div>
+      <div className="modal-body">
+        <label className="fact"><span>New password (8+ characters)</span><input id="cp-pw" name="pw" type="password" autoComplete="new-password" autoFocus required /></label>
+        <label className="fact"><span>Type it again</span><input id="cp-pw2" name="pw2" type="password" autoComplete="new-password" required /></label>
+        {err && <p className="notice">{err}</p>}
+      </div>
+      <div className="modal-footer"><button type="button" className="btn ghost" onClick={onClose}>Cancel</button><button type="submit" className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Change password'}</button></div>
+    </form>
+  </div>;
+}
+
 /* ---------- import dialog ---------- */
 function ImportDialog({ kind, onClose, onDone }) {
   const [file, setFile] = useState(null);
@@ -147,7 +186,7 @@ function RecipeList({ recipes, open, organizer, onNew, onImport }) {
       <ul className="rows">{list.map((r) => (
         <li key={r.id}><button type="button" className="row" onClick={() => open(r.id)}>
           <span className="row-main"><span className="row-title">{r.name}</span><span className="row-sub">{r.batchLabel || 'Batch size not set'}</span></span>
-          <span className="row-meta"><span className="cat">{r.category}</span>{!r.reviewed && <span className="pill amber">Check import</span>}</span>
+          <span className="row-meta"><span className="cat">{r.category}</span>{organizer && !r.reviewed && <span className="pill amber">Check import</span>}</span>
         </button></li>
       ))}</ul>}
   </section>;
@@ -155,6 +194,7 @@ function RecipeList({ recipes, open, organizer, onNew, onImport }) {
 
 function RecipeDetail({ recipe, store, back, setMsg, isNew = false, onCreated }) {
   const [mult, setMult] = useState(1);
+  const [confirmDel, setConfirmDel] = useState(false);
   const [edit, setEdit] = useState(isNew);
   const [draft, setDraft] = useState(recipe);
   const [showDoc, setShowDoc] = useState(false);
@@ -172,7 +212,6 @@ function RecipeDetail({ recipe, store, back, setMsg, isNew = false, onCreated })
   };
   const warn = warningsFor(r.tags, r.ingredients);
   return <section className="detail">
-    <button type="button" className="back" onClick={back}>‹ All recipes</button>
     <header className="detail-head">
       {edit ? <label className="fact grow"><span>Recipe name</span><input id="r-name" value={draft.name} placeholder="e.g. Creamy Tuscan Chicken" autoFocus={isNew} onChange={(e) => set({ name: e.target.value })} /></label> : <h2>{r.name}</h2>}
       <div className="head-actions">
@@ -181,7 +220,7 @@ function RecipeDetail({ recipe, store, back, setMsg, isNew = false, onCreated })
       </div>
     </header>
     {isNew && r.source && <p className="notice">Read from <b>{r.source}</b>. Check the name, batch size, allergen tags and every ingredient against the original below, then save.</p>}
-    {!r.reviewed && !edit && <p className="notice">Imported automatically from <b>{r.source}</b>. Check the ingredient list against the original below, then save it to mark it checked.</p>}
+    {store.organizer && !r.reviewed && !edit && <p className="notice">Imported automatically from <b>{r.source}</b>. Check the ingredient list against the original below, then save it to mark it checked.</p>}
 
     <div className="facts">
       <label className="fact"><span>Category</span>
@@ -226,6 +265,10 @@ function RecipeDetail({ recipe, store, back, setMsg, isNew = false, onCreated })
       <button type="button" className="btn ghost" onClick={() => setShowDoc(!showDoc)} aria-expanded={showDoc}>{showDoc ? 'Hide' : 'Show'} the original recipe, method and oven settings</button>
       {showDoc && (r.text ? <pre className="doctext">{r.text}</pre> : <p className="muted hint">No original text for this recipe.</p>)}
     </div>
+      {store.organizer && !isNew && !edit && <div className="danger">
+      {confirmDel ? <span>Delete this recipe for everyone? Events that use it keep the dish, just unlinked. <button type="button" className="btn small danger-btn" onClick={async () => { try { await deleteRecipe(recipe.id); setMsg('Recipe deleted'); await store.refresh(['recipes']); back(); } catch (e) { setMsg('Could not delete: ' + e.message); } }}>Delete recipe</button> <button type="button" className="btn small ghost" onClick={() => setConfirmDel(false)}>Keep it</button></span>
+        : <button type="button" className="btn ghost small" onClick={() => setConfirmDel(true)}>Delete recipe</button>}
+    </div>}
   </section>;
 }
 
@@ -242,7 +285,7 @@ function EventList({ events, open, create, canEdit, onImport }) {
     {e.imported && <span className="row-meta"><span className="pill muted-pill">From plan doc</span></span>}
   </button></li>;
   return <section>
-    <div className="toolbar between"><h2 className="section-title">Events</h2>{canEdit && <div className="head-actions"><button type="button" className="btn" onClick={onImport}><i className="ti ti-file-import" />Import</button><button type="button" className="btn primary" onClick={create}><i className="ti ti-plus" />New event</button></div>}</div>
+    <div className="toolbar between">{canEdit && <div className="head-actions push-right"><button type="button" className="btn" onClick={onImport}><i className="ti ti-file-import" />Import</button><button type="button" className="btn primary" onClick={create}><i className="ti ti-plus" />New event</button></div>}</div>
     {!events.length && <Empty title="No events planned yet">{canEdit ? 'Start with New event: name it, set the guest count, then add dishes from the recipe library.' : 'Events the organizers plan will show up here.'}</Empty>}
     {!!upcoming.length && <><h3 className="group">Coming up</h3><ul className="rows">{upcoming.map((e) => <Card key={e.id} e={e} />)}</ul></>}
     {!!past.length && <><h3 className="group">Past</h3><ul className="rows">{past.map((e) => <Card key={e.id} e={e} />)}</ul></>}
@@ -395,7 +438,6 @@ function EventDetail({ ev, store, back, setMsg }) {
   </div>;
 
   return <section className="detail">
-    <button type="button" className="back" onClick={back}>‹ All events</button>
     <header className="event-head">
       {ro && <h2>{draft.name}</h2>}
       <div className="facts">
@@ -409,10 +451,10 @@ function EventDetail({ ev, store, back, setMsg }) {
       {[['menu', 'Menu'], ['groceries', `Groceries (${groceries.length + extras.length})`], ['prep', 'Prep days'], ['ovens', 'Oven schedule'], ['labels', 'Buffet labels'], ['safety', 'Safety log'], ...(draft.planText ? [['plan', 'Original plan']] : [])].map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
     </div>
 
-    {draft.imported && tab === 'menu' && <p className="notice">Imported from <b>{draft.source}</b>. Dishes were matched to recipes automatically and start at 0 batches, so the grocery list fills in as you set batch counts. Prep days and the oven schedule were read from the doc too; the full original is on the Original plan tab.</p>}
+    {!ro && draft.imported && tab === 'menu' && <p className="notice">Imported from <b>{draft.source}</b>. Dishes were matched to recipes automatically and start at 0 batches, so the grocery list fills in as you set batch counts. Prep days and the oven schedule were read from the doc too; the full original is on the Original plan tab.</p>}
     {tab === 'prep' && <PrepDays draft={draft} update={update} ro={ro} canTick byId={byId} onDownload={() => doDownload(`${draft.name} day sheet.html`, daySheetHtml(draft, byId, tagLine))} />}
     {tab === 'ovens' && <OvenSchedule draft={draft} update={update} ro={ro} byId={byId} onDownload={() => doDownload(`${draft.name} day sheet.html`, daySheetHtml(draft, byId, tagLine))} />}
-    {tab === 'safety' && <SafetyLog draft={draft} update={update} ro={false} organizer={store.organizer} onDownload={() => doDownload(`${draft.name} safety log.txt`, safetyText(draft))} />}
+    {tab === 'safety' && <SafetyLog draft={draft} update={update} ro={false} organizer={store.organizer} me={store.profile?.id} onDownload={() => doDownload(`${draft.name} safety log.txt`, safetyText(draft))} />}
     {tab === 'plan' && <div className="doc"><p className="muted hint">From {draft.source}</p><pre className="doctext">{draft.planText}</pre></div>}
     {tab === 'menu' && <>
       {tableBlock('regular', 'Regular buffet', 'Batches are multiples of the recipe as written. Set servings per batch on a recipe and the planner will suggest a count from the guest number.')}
@@ -423,20 +465,20 @@ function EventDetail({ ev, store, back, setMsg }) {
       <div className="toolbar between"><p className="muted">Totals add up every dish's ingredients × batches. Same items in different units are combined.</p>
         <div className="head-actions"><button type="button" className="btn small" onClick={() => doDownload(`${draft.name} groceries.txt`, groceryText())}>Download list</button></div></div>
       {!groceries.length && !extras.length && <Empty title="Nothing to buy yet">Add dishes on the Menu tab and their ingredients show up here.</Empty>}
-      <div className="tablewrap"><table className="grocery"><tbody>
+      {!!(groceries.length + extras.length) && <div className="tablewrap"><table className="grocery"><tbody>
         {groceries.map((g) => <tr key={g.key} className={checked[g.key] ? 'done' : ''}>
           <td><input id={'gc' + g.key} type="checkbox" aria-label={'Got ' + g.name} checked={!!checked[g.key]} disabled={ro} onChange={(e) => update({ checked: { ...checked, [g.key]: e.target.checked } })} /></td>
           <td className="qty">{g.loose ? <span className="muted">as needed</span> : fmt(g.total, g.fam, g.pref)}</td>
           <td><span className="g-name">{g.name}</span><span className="g-from">{[...g.from].join(', ')}</span></td>
           <td>{ro ? (stores[g.key] || '') : <select id={'gs' + g.key} aria-label="Store" value={stores[g.key] || ''} onChange={(e) => update({ stores: { ...stores, [g.key]: e.target.value } })}><option value="">Store</option>{STORES.map((s) => <option key={s}>{s}</option>)}</select>}</td>
         </tr>)}
-        {extras.map((x, n) => <tr key={x.id} className={x.done ? 'done' : ''}>
+        {extras.map((x) => <tr key={x.id} className={x.done ? 'done' : ''}>
           <td><input id={'xc' + x.id} type="checkbox" aria-label={'Got ' + x.text} checked={!!x.done} disabled={ro} onChange={(e) => update({ extras: extras.map((y) => (y.id === x.id ? { ...y, done: e.target.checked } : y)) })} /></td>
           <td className="qty muted">extra</td>
           <td><span className="g-name">{x.text}</span></td>
           <td>{!ro && <button type="button" className="x" aria-label="Remove" onClick={() => update({ extras: extras.filter((y) => y.id !== x.id) })}>×</button>}</td>
         </tr>)}
-      </tbody></table></div>
+      </tbody></table></div>}
       {!ro && <form className="extra" onSubmit={(e) => { e.preventDefault(); const v = e.target.elements.extra.value.trim(); if (v) { update({ extras: [...extras, { id: uid(), text: v }] }); e.target.reset(); } }}>
         <input id="extra" name="extra" placeholder="Add an extra item: take-out containers, gloves, steam pan lids…" /><button className="btn small" type="submit">Add</button>
       </form>}
@@ -471,7 +513,6 @@ function People({ store, setMsg }) {
   useEffect(() => { load(); }, []);
   if (!store.organizer) return <Navigate to="/events" replace />;
   return <section>
-    <h2 className="section-title">People</h2>
     <p className="muted">Organizers can edit recipes and events. Volunteers can read everything, tick prep tasks and the safety checklist, and log temperatures. To add someone, invite them by email from the Supabase dashboard (Authentication → Users → Invite user); they appear here as a volunteer once they accept.</p>
     {!rows ? <Empty title="Loading people…" /> : <ul className="rows">{rows.map((p) => <li key={p.id}><div className="row static-row">
       <span className="row-main"><span className="row-title">{p.full_name || p.email}</span><span className="row-sub">{p.email}</span></span>
@@ -560,6 +601,7 @@ function Signed({ session }) {
     catch (e) { setMsg('Could not create the event: ' + e.message); }
   };
   const [importing, setImporting] = useState(null);
+  const [changingPw, setChangingPw] = useState(false);
   const doImport = async (input) => {
     if (importing === 'recipe') {
       const draft = await importRecipe(input);
@@ -567,7 +609,7 @@ function Signed({ session }) {
     } else {
       const draft = await importEvent(input, store.recipes.map((r) => r.id));
       await createEvent(draft.date || today(), draft.id, draft.name);
-      await syncDraft({ id: draft.id, name: draft.name, date: draft.date || today(), guests: 0, notes: '', extras: [], checked: {}, stores: {}, dishes: [], prepDays: [], ovenDays: [], tempLog: [], checks: {} }, draft);
+      await syncEvent({ id: draft.id, name: draft.name, date: draft.date || today(), guests: 0, notes: '', extras: [], checked: {}, stores: {}, dishes: [], prepDays: [], ovenDays: [], tempLog: [], checks: {} }, draft);
       await markImported(draft);
       setImporting(null); store.refresh(['events']); setMsg('Imported — check it over'); nav('/events/' + draft.id);
     }
@@ -614,13 +656,14 @@ function Signed({ session }) {
           <button type="button" className={'menu-item' + (section === 'people' ? ' on' : '')} onClick={() => nav('/people')}><i className="ti ti-users" />People</button>
         </div>}
         <div className="menu-section">
+          <button type="button" className="menu-item" onClick={() => { setMenu(false); setChangingPw(true); }}><i className="ti ti-key" />Change password</button>
           <button type="button" className="menu-item menu-item-danger" onClick={() => supabase.auth.signOut()}><i className="ti ti-logout" />Sign out</button>
         </div>
       </nav>
     </div>}
     <main>
       {store.status === 'error' && <Empty title="Couldn't load the kitchen data">Reload the page. If it keeps happening, check your connection.</Empty>}
-      {store.status === 'loading' ? <Empty title="Loading the kitchen…" /> : <Routes>
+      {store.status === 'loading' ? <Empty title="Loading the kitchen…" /> : <ErrorBoundary resetKey={loc.pathname}><Routes>
         <Route path="/" element={<Navigate to="/events" replace />} />
         <Route path="/events" element={<EventList events={store.events} open={(id) => nav('/events/' + id)} create={create} canEdit={store.organizer} onImport={() => setImporting('event')} />} />
         <Route path="/events/:id" element={<EventLoader store={store} setMsg={setMsg} />} />
@@ -629,8 +672,9 @@ function Signed({ session }) {
         <Route path="/quantities" element={<Reference reference={store.reference} />} />
         <Route path="/people" element={<People store={store} setMsg={setMsg} />} />
         <Route path="*" element={<Navigate to="/events" replace />} />
-      </Routes>}
+      </Routes></ErrorBoundary>}
     </main>
+    {changingPw && <ChangePassword onClose={() => setChangingPw(false)} setMsg={setMsg} />}
     {importing && <ImportDialog kind={importing} onClose={() => setImporting(null)} onDone={doImport} />}
     <div className={'toast' + (msg ? ' show' : '')} role="status" aria-live="polite">{msg}</div>
   </div>;
