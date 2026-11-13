@@ -319,3 +319,15 @@ input[type=date]::-webkit-date-and-time-value, input[type=time]::-webkit-date-an
 .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
 .or::before, .or::after { content: ""; flex: 1; border-top: 0.5px solid var(--line); }
 .event-head .facts { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+
+/* ---- dropdowns: Okto-style chevron everywhere (People roles, store, units, lanes, checks) ---- */
+select {
+  -webkit-appearance: none; appearance: none; cursor: pointer;
+  background-color: var(--sunk);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%235f6672' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  padding-right: 28px !important; height: 38px; min-height: 38px; font-size: 13px;
+}
+.row-meta select { width: 140px; height: 34px; min-height: 34px; }
+.grocery select, .temps select { height: 34px; min-height: 34px; }
+.pill.you-pill { background: var(--accent-soft); color: var(--accent); text-transform: none; letter-spacing: 0; font-size: 12px; }

@@ -475,7 +475,7 @@ function People({ store, setMsg }) {
     <p className="muted">Organizers can edit recipes and events. Volunteers can read everything, tick prep tasks and the safety checklist, and log temperatures. To add someone, invite them by email from the Supabase dashboard (Authentication → Users → Invite user); they appear here as a volunteer once they accept.</p>
     {!rows ? <Empty title="Loading people…" /> : <ul className="rows">{rows.map((p) => <li key={p.id}><div className="row static-row">
       <span className="row-main"><span className="row-title">{p.full_name || p.email}</span><span className="row-sub">{p.email}</span></span>
-      <span className="row-meta">{p.id === store.profile?.id ? <span className="pill muted-pill">You · {p.role}</span>
+      <span className="row-meta">{p.id === store.profile?.id ? <span className="pill you-pill">You · {p.role}</span>
         : <select id={'role' + p.id} aria-label={'Role for ' + (p.full_name || p.email)} value={p.role} onChange={async (e) => { try { await setRole(p.id, e.target.value); setMsg('Role updated'); load(); } catch (x) { setMsg('Could not change role: ' + x.message); } }}>
           <option value="organizer">Organizer</option><option value="volunteer">Volunteer</option></select>}</span>
     </div></li>)}</ul>}
