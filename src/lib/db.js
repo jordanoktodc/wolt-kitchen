@@ -35,6 +35,30 @@ export async function saveRecipe(r) {
   const { error } = await supabase.from('recipes').upsert(recipeToRow(r)); fail(error);
 }
 
+/* ---------------- products (store items + which ingredient each covers) ---------------- */
+export async function loadProducts() {
+  const { data, error } = await supabase.from('products').select('*').order('store').order('name');
+  fail(error); return data;
+}
+export async function loadProductLinks() {
+  const { data, error } = await supabase.from('ingredient_products').select('*');
+  fail(error); return Object.fromEntries(data.map((l) => [l.item_key, l.product_id]));
+}
+export async function saveProduct(p) {
+  const row = { id: p.id || newId(), name: p.name, store: p.store || 'Costco', item_number: p.item_number || '', pack_qty: Number(p.pack_qty) || 1,
+    pack_unit: p.pack_unit || '', pack_label: p.pack_label || '', equiv_qty: p.equiv_qty === '' || p.equiv_qty == null ? null : Number(p.equiv_qty),
+    equiv_unit: p.equiv_unit || null, price: p.price === '' || p.price == null ? null : Number(p.price), notes: p.notes || '' };
+  const { error } = await supabase.from('products').upsert(row); fail(error);
+  return row.id;
+}
+export async function deleteProduct(id) {
+  const { error } = await supabase.from('products').delete().eq('id', id); fail(error);
+}
+export async function linkIngredient(itemKey, productId) {
+  const q = productId ? supabase.from('ingredient_products').upsert({ item_key: itemKey, product_id: productId }) : supabase.from('ingredient_products').delete().eq('item_key', itemKey);
+  const { error } = await q; fail(error);
+}
+
 /* ---------------- reference ---------------- */
 export async function loadReference() {
   const { data, error } = await supabase.from('reference_notes').select('*').order('sort');

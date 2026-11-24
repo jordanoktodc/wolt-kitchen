@@ -331,3 +331,26 @@ select {
 .row-meta select { width: 140px; height: 34px; min-height: 34px; }
 .grocery select, .temps select { height: 34px; min-height: 34px; }
 .pill.you-pill { background: var(--accent-soft); color: var(--accent); text-transform: none; letter-spacing: 0; font-size: 12px; }
+
+/* ---- products + grocery packs ---- */
+.pair { display: flex; gap: 6px; min-width: 0; }
+.pair input { flex: 1 1 60%; min-width: 0; }
+.pair select { flex: 1 1 40%; min-width: 0; }
+.product-form { background: var(--surface); border: 0.5px solid var(--accent-border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.product-form .fact { background: var(--bg); }
+.row-edit { padding: 8px; }
+.row-edit .product-form { border: 0; padding: 4px; }
+.grocery-rows li { padding: 0; }
+.g-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; }
+.g-row input[type=checkbox] { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+.g-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.g-name { font-weight: 600; text-transform: capitalize; }
+.g-need { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.g-buy { font-size: 13px; }
+.g-buy b { color: var(--accent); }
+li.done .g-name, li.done .g-buy { text-decoration: line-through; color: var(--muted); }
+.g-pick { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 12px 42px; }
+.g-pick select { flex: 1 1 220px; min-width: 0; }
+.g-total { margin: 0; font-size: 14px; }
+.extra select { width: 120px; flex: none; }
+@media (max-width: 520px) { .g-pick { padding-left: 12px; } .extra { flex-wrap: wrap; } .extra input { flex: 1 1 100%; } }

@@ -101,3 +101,21 @@ export function allergenHits(ingredients) {
   }
   return Object.fromEntries(Object.entries(hits).map(([k, v]) => [k, [...v]]));
 }
+
+// How many store packs cover a grocery total. A product is sold as pack_qty pack_unit
+// (e.g. 5 kg), optionally also described in another unit (e.g. ≈ 24 cup) so recipes
+// written in cups can still be matched to a product sold by weight.
+export function packsFor(row, product) {
+  if (!product || row.loose || !row.total) return { packs: null, reason: row.loose ? 'amount not given in recipe' : null };
+  const options = [[product.pack_qty, product.pack_unit], [product.equiv_qty, product.equiv_unit]];
+  for (const [q, u] of options) {
+    if (!q) continue;
+    if (family(u || null) !== row.fam) continue;
+    const base = baseQty({ qty: Number(q), unit: u || null });
+    if (!base) continue;
+    const exact = row.total / base;
+    return { packs: Math.max(1, Math.ceil(exact - 0.02)), exact };
+  }
+  const fam = (f) => (f === 'vol' ? 'volume (cups, L)' : f === 'wt' ? 'weight (kg, lb)' : 'count');
+  return { packs: null, reason: `recipes use ${fam(row.fam)}; add what one pack equals in that unit` };
+}

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useParams, useLocation, Navigate } from 'react-router-dom';
 import { PrepDays, OvenSchedule, SafetyLog, daySheetHtml, safetyText } from './phase2.jsx';
-import { fmtIng, baseQty, family, fmt, itemKey, allergenHits, UNITS } from './units.js';
+import { fmtIng, baseQty, family, itemKey, allergenHits, UNITS } from './units.js';
+import { Products, GroceryTab } from './products.jsx';
 import { readInput, importRecipe, importEvent } from './lib/importDoc.js';
-import { supabase, AUTH_LINK_TYPE, loadRecipes, saveRecipe, deleteRecipe, loadReference, loadEventList, loadEvent, syncEvent, createEvent, deleteEvent, markImported, download, loadProfiles, setRole } from './lib/db.js';
+import { supabase, AUTH_LINK_TYPE, loadRecipes, saveRecipe, deleteRecipe, loadReference, loadEventList, loadEvent, syncEvent, createEvent, deleteEvent, markImported, download, loadProfiles, setRole, loadProducts, loadProductLinks } from './lib/db.js';
 
 const CATS = ['Protein', 'Starch', 'Vegetable', 'Salad', 'Soup', 'Sauce & dressing', 'Bread', 'Other'];
 const TAGS = [
@@ -12,7 +13,6 @@ const TAGS = [
   { k: 'garlicFree', label: 'Garlic free', long: 'Garlic free' },
   { k: 'containsNuts', label: 'Contains nuts', long: 'Contains nuts' },
 ];
-const STORES = ['Costco', 'Superstore', 'Wholesale', 'Other'];
 const uid = () => crypto.randomUUID();
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Edmonton' });
 const fmtDate = (d) => {
@@ -24,13 +24,15 @@ const tagLine = (tags = {}) => TAGS.filter((t) => tags[t.k]).map((t) => t.label)
 
 /* ---------- data layer ---------- */
 function useStore(session) {
-  const [state, setState] = useState({ status: 'loading', recipes: [], events: [], reference: null, profile: null });
-  const refresh = useCallback(async (what = ['recipes', 'events', 'reference', 'profile']) => {
+  const [state, setState] = useState({ status: 'loading', recipes: [], events: [], reference: null, profile: null, products: [], links: {} });
+  const refresh = useCallback(async (what = ['recipes', 'events', 'reference', 'profile', 'products', 'links']) => {
     try {
       const patch = {};
       if (what.includes('recipes')) patch.recipes = await loadRecipes();
       if (what.includes('events')) patch.events = await loadEventList();
       if (what.includes('reference')) patch.reference = await loadReference();
+      if (what.includes('products')) patch.products = await loadProducts().catch(() => []);
+      if (what.includes('links')) patch.links = await loadProductLinks().catch(() => ({}));
       if (what.includes('profile')) {
         const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
         patch.profile = data;
@@ -351,6 +353,7 @@ function EventLoader({ store, setMsg }) {
 }
 
 function EventDetail({ ev, store, back, setMsg }) {
+  const nav = useNavigate();
   const [draft, setDraft] = useState(ev);
   const saved = useRef(ev);
   const latest = useRef(ev);
@@ -395,18 +398,8 @@ function EventDetail({ ev, store, back, setMsg }) {
     setAdding(null);
   };
   const groceries = useMemo(() => aggregate(draft, byId), [draft.dishes, byId]);
-  const checked = draft.checked || {};
-  const stores = draft.stores || {};
   const extras = draft.extras || [];
   const doDownload = (filename, data) => download(filename, data);
-  const groceryText = () => {
-    const lines = [`${draft.name} — groceries (${draft.guests || '?'} guests, ${fmtDate(draft.date)})`, ''];
-    const grouped = {};
-    for (const g of groceries) (grouped[stores[g.key] || 'Unassigned'] ||= []).push(`${checked[g.key] ? '[x]' : '[ ]'} ${g.loose ? '' : fmt(g.total, g.fam, g.pref) + '  '}${g.name}`);
-    for (const x of extras) (grouped[x.store || 'Unassigned'] ||= []).push(`${x.done ? '[x]' : '[ ]'} ${x.text}`);
-    for (const s of Object.keys(grouped)) lines.push(s.toUpperCase(), ...grouped[s], '');
-    return lines.join('\n');
-  };
 
   const DishRow = ({ d }) => {
     const r = byId[d.recipeId];
@@ -461,28 +454,7 @@ function EventDetail({ ev, store, back, setMsg }) {
       {tableBlock('allergy', 'Allergy table', 'New dishes here start tagged GF, DF and garlic free. The checks below flag any ingredient that conflicts with a tag.')}
     </>}
 
-    {tab === 'groceries' && <div className="groceries">
-      <div className="toolbar between"><p className="muted">Totals add up every dish's ingredients × batches. Same items in different units are combined.</p>
-        <div className="head-actions"><button type="button" className="btn small" onClick={() => doDownload(`${draft.name} groceries.txt`, groceryText())}>Download list</button></div></div>
-      {!groceries.length && !extras.length && <Empty title="Nothing to buy yet">Add dishes on the Menu tab and their ingredients show up here.</Empty>}
-      {!!(groceries.length + extras.length) && <div className="tablewrap"><table className="grocery"><tbody>
-        {groceries.map((g) => <tr key={g.key} className={checked[g.key] ? 'done' : ''}>
-          <td><input id={'gc' + g.key} type="checkbox" aria-label={'Got ' + g.name} checked={!!checked[g.key]} disabled={ro} onChange={(e) => update({ checked: { ...checked, [g.key]: e.target.checked } })} /></td>
-          <td className="qty">{g.loose ? <span className="muted">as needed</span> : fmt(g.total, g.fam, g.pref)}</td>
-          <td><span className="g-name">{g.name}</span><span className="g-from">{[...g.from].join(', ')}</span></td>
-          <td>{ro ? (stores[g.key] || '') : <select id={'gs' + g.key} aria-label="Store" value={stores[g.key] || ''} onChange={(e) => update({ stores: { ...stores, [g.key]: e.target.value } })}><option value="">Store</option>{STORES.map((s) => <option key={s}>{s}</option>)}</select>}</td>
-        </tr>)}
-        {extras.map((x) => <tr key={x.id} className={x.done ? 'done' : ''}>
-          <td><input id={'xc' + x.id} type="checkbox" aria-label={'Got ' + x.text} checked={!!x.done} disabled={ro} onChange={(e) => update({ extras: extras.map((y) => (y.id === x.id ? { ...y, done: e.target.checked } : y)) })} /></td>
-          <td className="qty muted">extra</td>
-          <td><span className="g-name">{x.text}</span></td>
-          <td>{!ro && <button type="button" className="x" aria-label="Remove" onClick={() => update({ extras: extras.filter((y) => y.id !== x.id) })}>×</button>}</td>
-        </tr>)}
-      </tbody></table></div>}
-      {!ro && <form className="extra" onSubmit={(e) => { e.preventDefault(); const v = e.target.elements.extra.value.trim(); if (v) { update({ extras: [...extras, { id: uid(), text: v }] }); e.target.reset(); } }}>
-        <input id="extra" name="extra" placeholder="Add an extra item: take-out containers, gloves, steam pan lids…" /><button className="btn small" type="submit">Add</button>
-      </form>}
-    </div>}
+    {tab === 'groceries' && <GroceryTab draft={draft} update={update} ro={ro} groceries={groceries} store={store} setMsg={setMsg} Empty={Empty} onAddProduct={() => nav('/products')} onDownload={(text) => doDownload(`${draft.name} groceries.txt`, text)} />}
 
     {tab === 'labels' && <div className="labels">
       <div className="toolbar between"><p className="muted">Each dish prints the number of labels set on the Menu tab. Download the sheet and print it on letter paper.</p>
@@ -620,11 +592,12 @@ function Signed({ session }) {
   const parts = loc.pathname.split('/').filter(Boolean);
   const section = parts[0] || 'events';
   const detail = parts.length > 1;
-  const TITLES = { events: 'Events', recipes: 'Recipes', quantities: 'Quantities', people: 'People' };
+  const TITLES = { events: 'Events', recipes: 'Recipes', products: 'Products', quantities: 'Quantities', people: 'People' };
   const title = detail ? (section === 'events' ? 'Event' : 'Recipe') : (TITLES[section] || 'WOLT Kitchen');
   const items = [
     ['/events', 'Events', 'ti-calendar-event'],
     ['/recipes', 'Recipes', 'ti-chef-hat'],
+    ['/products', 'Products', 'ti-shopping-cart'],
     ['/quantities', 'Quantities', 'ti-scale'],
   ];
   const first = (store.profile?.full_name || store.profile?.email || '').split(/[ @]/)[0];
@@ -669,6 +642,7 @@ function Signed({ session }) {
         <Route path="/events/:id" element={<EventLoader store={store} setMsg={setMsg} />} />
         <Route path="/recipes" element={<RecipeList recipes={store.recipes} open={(id) => nav('/recipes/' + id)} organizer={store.organizer} onNew={() => nav('/recipes/new', { state: { draft: BLANK_RECIPE } })} onImport={() => setImporting('recipe')} />} />
         <Route path="/recipes/:id" element={<RecipeRoute store={store} setMsg={setMsg} />} />
+        <Route path="/products" element={<Products store={store} setMsg={setMsg} />} />
         <Route path="/quantities" element={<Reference reference={store.reference} />} />
         <Route path="/people" element={<People store={store} setMsg={setMsg} />} />
         <Route path="*" element={<Navigate to="/events" replace />} />

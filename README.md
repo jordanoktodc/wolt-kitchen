@@ -24,7 +24,9 @@ VITE_SUPABASE_ANON_KEY=<publishable key from Supabase → Project Settings → A
 2. `supabase/seed/01_recipes.sql`, `02_events.sql`, `03_events.sql` — the data from the prototype
    (72 recipes, 31 events with dishes, prep days and oven schedules). Run in order. They are safe to
    re-run: rows are matched by id and updated.
-3. `supabase/make_seed.py` rebuilds the seed files from a prototype export, if ever needed.
+3. `supabase/002_products.sql` — Products (pack sizes, item numbers, prices) and which ingredient each
+   covers; the grocery list rounds up to whole packs from these.
+4. `supabase/make_seed.py` rebuilds the seed files from a prototype export, if ever needed.
 
 Roles (`profiles.role`):
 
