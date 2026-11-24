@@ -161,7 +161,7 @@ function ImportDialog({ kind, onClose, onDone }) {
 }
 
 const slugify = (s) => (s || 'recipe').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'recipe';
-const BLANK_RECIPE = { id: null, name: '', category: 'Other', batchLabel: '', servingsPerBatch: null, tags: {}, ingredients: [{ qty: null, unit: null, item: '' }], notes: '', text: '', source: null, reviewed: false };
+const BLANK_RECIPE = { id: null, name: '', ovenProgram: '', ovenMinutes: null, category: 'Other', batchLabel: '', servingsPerBatch: null, tags: {}, ingredients: [{ qty: null, unit: null, item: '' }], notes: '', text: '', source: null, reviewed: false };
 
 /* ---------- recipes ---------- */
 function RecipeList({ recipes, open, organizer, onNew, onImport }) {
@@ -233,6 +233,12 @@ function RecipeDetail({ recipe, store, back, setMsg, isNew = false, onCreated })
       </label>
       <label className="fact"><span>Servings per batch</span>
         {edit ? <input id="r-serv" type="number" min="0" inputMode="numeric" value={draft.servingsPerBatch ?? ''} onChange={(e) => set({ servingsPerBatch: e.target.value === '' ? null : Number(e.target.value) })} /> : <b>{r.servingsPerBatch || 'Not set'}</b>}
+      </label>
+      <label className="fact wide"><span>Oven program</span>
+        {edit ? <input id="r-prog" value={draft.ovenProgram || ''} placeholder="e.g. Poultry › Roast, probe 170°F" onChange={(e) => set({ ovenProgram: e.target.value })} /> : <b>{r.ovenProgram || 'Not set'}</b>}
+      </label>
+      <label className="fact"><span>Oven time (min)</span>
+        {edit ? <input id="r-min" type="number" min="1" inputMode="numeric" value={draft.ovenMinutes ?? ''} placeholder="e.g. 45" onChange={(e) => set({ ovenMinutes: e.target.value === '' ? null : Number(e.target.value) })} /> : <b>{r.ovenMinutes ? `${r.ovenMinutes} min` : 'Not set'}</b>}
       </label>
     </div>
     <div className="fact-tags"><span className="label">Usually labelled</span>

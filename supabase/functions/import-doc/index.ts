@@ -23,6 +23,8 @@ const RECIPE_PROMPT = (full: string) => `This is a recipe from a church kitchen 
  "servingsPerBatch": number of servings one batch makes if stated, else null,
  "tags": {"gf": bool, "df": bool, "garlicFree": bool, "containsNuts": bool} — only true when the recipe says so or the ingredients make it certain; otherwise false,
  "ingredients": [{"qty": number|null, "qtyMax": number|null, "unit": one of ${JSON.stringify(UNITS)} or null, "item": text}] for ONE batch of the base recipe, in order. Use decimals for fractions (½ = 0.5). For a range like "1-1¼ cup" use qty 1, qtyMax 1.25. Items with no amount ("salt to taste") get qty null. If the document also lists a scaled-up grocery list, do NOT use it for ingredients,
+ "ovenProgram": the oven (iCombi / iVario) program or settings to select, short, e.g. "Poultry › Roast, probe 170°F" or "Manual combi 338°F, 30% humidity, probe 165°F", or "",
+ "ovenMinutes": minutes in the oven if stated, else null,
  "notes": short kitchen notes worth keeping (oven pathway, pan counts, quantities for weddings), at most 400 characters,
  "text": ${full}
 }`

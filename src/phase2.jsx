@@ -86,6 +86,27 @@ export function PrepDays({ draft, update, ro, canTick, byId, onDownload }) {
 }
 
 /* ================= Oven schedule ================= */
+// Which recipe a block is cooking: the dish it was linked to, or (for blocks read from old
+// plan docs) the one dish whose name shares a distinctive word with the block's label.
+const GENERIC = new Set(['chicken', 'salad', 'sauce', 'pan', 'pans', 'prep', 'into', 'reheat', 'with', 'and', 'the', 'add', 'hot', 'veg', 'oven', 'fry', 'roast', 'roasted', 'grill', 'grilled', 'heat', 'through', 'table', 'allergy', 'free', 'garlic', 'creamy', 'herbed']);
+const words = (s) => (s || '').toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !GENERIC.has(w));
+// Program to show on a block: always for a linked dish; for a name match only in Oven A / B
+// (a name match in the iVario is usually that dish's sauce, not the dish itself).
+export function programFor(slot, dishes, byId) {
+  if (slot.lane === 'prep') return '';
+  const m = recipeForSlot(slot, dishes, byId);
+  if (!m.recipe || (m.guessed && slot.lane === 'ivario')) return '';
+  return m.recipe.ovenProgram || '';
+}
+export function recipeForSlot(slot, dishes, byId) {
+  const linked = dishes.find((d) => d.key === slot.dishKey);
+  if (linked) return { recipe: byId[linked.recipeId], dish: linked, guessed: false };
+  const lw = new Set(words(slot.label));
+  if (!lw.size) return {};
+  const hits = [...new Map(dishes.filter((d) => byId[d.recipeId] && words(d.name + ' ' + byId[d.recipeId].name).some((w) => lw.has(w))).map((d) => [d.recipeId, d])).values()];
+  return hits.length === 1 ? { recipe: byId[hits[0].recipeId], dish: hits[0], guessed: true } : {};
+}
+
 function layout(slots) {
   // side-by-side columns where blocks overlap in a lane
   const out = {};
@@ -113,7 +134,7 @@ export function OvenSchedule({ draft, update, ro, byId, onDownload }) {
     const service = toMin(day.service) ?? 17 * 60;
     const hot = (draft.dishes || []).filter((d) => byId[d.recipeId] && ['Protein', 'Starch', 'Vegetable', 'Soup'].includes(byId[d.recipeId].category));
     const uniq = [...new Map(hot.map((d) => [d.recipeId + d.table, d])).values()].filter((d) => d.table === 'regular');
-    const items = uniq.map((d) => ({ d, min: guessMinutes(byId[d.recipeId].text) || 60 })).sort((a, b) => b.min - a.min);
+    const items = uniq.map((d) => ({ d, min: byId[d.recipeId].ovenMinutes || guessMinutes(byId[d.recipeId].text) || 60 })).sort((a, b) => b.min - a.min);
     const cursor = { ovenA: service - 15, ovenB: service - 15 };
     const add = items.map(({ d, min }) => {
       const lane = cursor.ovenA >= cursor.ovenB ? 'ovenA' : 'ovenB';
@@ -174,7 +195,7 @@ export function OvenSchedule({ draft, update, ro, byId, onDownload }) {
               return <button key={s.id} type="button" className={'blk' + (p.clash ? ' clash' : '') + (sel === s.id ? ' sel' : '') + (l.hot ? '' : ' prep')}
                 style={{ top: (a - lo) * PPM, height: Math.max(Number(s.minutes) * PPM, 22), left: `calc(${(p.col / p.cols) * 100}% + 2px)`, width: `calc(${100 / p.cols}% - 4px)` }}
                 onClick={() => setSel(sel === s.id ? null : s.id)} title={`${s.label} · ${t12(a)}–${t12(a + Number(s.minutes))}`}>
-                <span className="blk-t">{t12(a)}–{t12(a + Number(s.minutes))}</span><span className="blk-l">{s.label}</span>
+                <span className="blk-t">{t12(a)}–{t12(a + Number(s.minutes))}</span><span className="blk-l">{s.label}</span>{(() => { const prog = programFor(s, draft.dishes || [], byId); return prog ? <span className="blk-p">{prog}</span> : null; })()}
               </button>;
             })}
           </div>)}
@@ -184,7 +205,9 @@ export function OvenSchedule({ draft, update, ro, byId, onDownload }) {
 
     {selected && <div className="slot-edit" key={selected.id}>
       <div className="toolbar between"><h3>{ro ? selected.label : 'Edit block'}</h3><button type="button" className="x" aria-label="Close" onClick={() => setSel(null)}>×</button></div>
+      {(() => { const m = recipeForSlot(selected, draft.dishes || [], byId); return m.recipe ? <p className="program"><i className="ti ti-flame" /> <b>{m.recipe.ovenProgram || 'No oven program on this recipe yet'}</b><span className="muted"> · {m.recipe.name}{m.guessed ? ' (matched by name)' : ''}</span></p> : null; })()}
       {ro ? <p>{laneLabel(selected.lane)} · {t12(toMin(selected.start))} for {selected.minutes} min</p> : <div className="facts">
+        <label className="fact wide"><span>Dish</span><select id="se-dish" value={selected.dishKey || ''} onChange={(e) => { const d = (draft.dishes || []).find((x) => x.key === e.target.value); setSlot(selected.id, { dishKey: e.target.value || null, ...(d && byId[d.recipeId]?.ovenMinutes ? { minutes: byId[d.recipeId].ovenMinutes } : {}) }); }}><option value="">Not linked to a dish</option>{(draft.dishes || []).map((d) => <option key={d.key} value={d.key}>{d.name}{d.table === 'allergy' ? ' (allergy table)' : ''}</option>)}</select></label>
         <label className="fact wide"><span>What</span><input id="se-l" defaultValue={selected.label} onBlur={(e) => setSlot(selected.id, { label: e.target.value })} /></label>
         <label className="fact"><span>Where</span><select id="se-lane" value={selected.lane} onChange={(e) => setSlot(selected.id, { lane: e.target.value })}>{LANES.map((l) => <option key={l.k} value={l.k}>{l.label}</option>)}</select></label>
         <label className="fact"><span>Starts</span><input id="se-s" type="time" value={selected.start} onChange={(e) => e.target.value && setSlot(selected.id, { start: e.target.value })} /></label>
@@ -281,7 +304,7 @@ export function SafetyLog({ draft, update, ro, organizer, me, onDownload }) {
 export function daySheetHtml(ev, byId, tagLine) {
   const css = `body{font-family:Helvetica,Arial,sans-serif;font-size:11pt;margin:0.5in;color:#111}h1{font-size:20pt;margin:0 0 4px}h2{font-size:14pt;margin:22px 0 6px;border-bottom:2px solid #111;padding-bottom:3px}
   h3{font-size:12pt;margin:14px 0 4px}table{border-collapse:collapse;width:100%;table-layout:fixed}td,th{border:1px solid #444;padding:5px 6px;vertical-align:top;text-align:left;font-size:10pt}th{background:#eee}
-  ul{margin:4px 0;padding-left:0;list-style:none}li{margin:3px 0}li:before{content:"☐  "}.muted{color:#555}.page{break-before:page}td.t{width:12%;font-weight:bold}`;
+  ul{margin:4px 0;padding-left:0;list-style:none}.prog{font-size:9pt;margin-top:2px}li{margin:3px 0}li:before{content:"☐  "}.muted{color:#555}.page{break-before:page}td.t{width:12%;font-weight:bold}`;
   const menu = ['regular', 'allergy'].map((t) => {
     const ds = (ev.dishes || []).filter((d) => d.table === t);
     if (!ds.length) return '';
@@ -290,7 +313,7 @@ export function daySheetHtml(ev, byId, tagLine) {
   const prep = [...(ev.prepDays || [])].sort((a, b) => (a.date || '').localeCompare(b.date || '')).map((d) => `<h3>${esc(dayName(d.date))}: ${esc(d.title)}${d.crew ? ` <span class="muted">(${esc(d.crew)})</span>` : ''}</h3><ul>${d.tasks.map((t) => `<li>${esc(t.text)}</li>`).join('')}</ul>`).join('');
   const ovens = (ev.ovenDays || []).map((o) => {
     const times = [...new Set(o.slots.map((s) => toMin(s.start)))].sort((a, b) => a - b);
-    const rows = times.map((t) => `<tr><td class="t">${t12(t)}</td>${LANES.map((l) => `<td>${o.slots.filter((s) => s.lane === l.k && toMin(s.start) === t).map((s) => `${esc(s.label)} <span class="muted">(until ${t12(t + Number(s.minutes))})</span>`).join('<br>')}</td>`).join('')}</tr>`).join('');
+    const rows = times.map((t) => `<tr><td class="t">${t12(t)}</td>${LANES.map((l) => `<td>${o.slots.filter((s) => s.lane === l.k && toMin(s.start) === t).map((s) => { const prog = programFor(s, ev.dishes || [], byId); return `${esc(s.label)} <span class="muted">(until ${t12(t + Number(s.minutes))})</span>${prog ? `<div class="prog">▸ ${esc(prog)}</div>` : ''}`; }).join('<br>')}</td>`).join('')}</tr>`).join('');
     return `<h3>${esc(o.title)}${o.service ? ` · food served ${t12(toMin(o.service))}` : ''}</h3><table><tr><th class="t">Time</th>${LANES.map((l) => `<th>${l.label}</th>`).join('')}</tr>${rows}</table>`;
   }).join('');
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(ev.name)} – day sheet</title><style>${css}</style></head><body>

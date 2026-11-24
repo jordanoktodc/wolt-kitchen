@@ -56,6 +56,8 @@ export async function importRecipe(input) {
     tags: tagsOf(r.tags),
     ingredients: (r.ingredients || []).map((i) => ({ qty: num(i.qty), qtyMax: num(i.qtyMax), unit: i.unit || null, item: String(i.item || '').trim() })).filter((i) => i.item),
     notes: r.notes || '',
+    ovenProgram: r.ovenProgram || '',
+    ovenMinutes: num(r.ovenMinutes),
     text: input.text || r.text || '',
     source: input.fileName || 'Pasted text',
     reviewed: false,

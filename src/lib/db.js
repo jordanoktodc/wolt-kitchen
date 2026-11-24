@@ -19,10 +19,12 @@ const fail = (error) => { if (error) throw error; };
 export const recipeFromRow = (r) => ({
   id: r.id, name: r.name, category: r.category, batchLabel: r.batch_label, servingsPerBatch: r.servings_per_batch == null ? null : Number(r.servings_per_batch),
   tags: r.tags || {}, ingredients: r.ingredients || [], notes: r.notes, text: r.source_text, source: r.source_file, reviewed: r.reviewed,
+  ovenProgram: r.oven_program || '', ovenMinutes: r.oven_minutes ?? null,
 });
 const recipeToRow = (r) => ({
   id: r.id, name: r.name, category: r.category, batch_label: r.batchLabel || '', servings_per_batch: r.servingsPerBatch ?? null,
   tags: r.tags || {}, ingredients: r.ingredients || [], notes: r.notes || '', source_text: r.text || '', source_file: r.source || null, reviewed: !!r.reviewed,
+  oven_program: r.ovenProgram || '', oven_minutes: r.ovenMinutes ? Math.round(Number(r.ovenMinutes)) : null,
 });
 export async function loadRecipes() {
   const { data, error } = await supabase.from('recipes').select('*').order('name');

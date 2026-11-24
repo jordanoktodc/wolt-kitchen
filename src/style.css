@@ -354,3 +354,6 @@ li.done .g-name, li.done .g-buy { text-decoration: line-through; color: var(--mu
 .g-total { margin: 0; font-size: 14px; }
 .extra select { width: 120px; flex: none; }
 @media (max-width: 520px) { .g-pick { padding-left: 12px; } .extra { flex-wrap: wrap; } .extra input { flex: 1 1 100%; } }
+.blk-p { font-size: .68rem; color: var(--accent); line-height: 1.2; overflow: hidden; }
+.program { margin: 0; font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.program i { color: var(--hl); }
